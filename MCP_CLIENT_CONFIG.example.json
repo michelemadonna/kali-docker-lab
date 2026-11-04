@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kali-lab": {
+      "command": "docker",
+      "args": ["exec", "-i", "kali-lab", "mcp-server", "--server", "http://127.0.0.1:5000"]
+    }
+  }
+}

@@ -1,0 +1,81 @@
+name: kali-lab
+
+services:
+  kali:
+    build:
+      context: .
+      args:
+        DESKTOP: ${DESKTOP:-openbox}
+        INSTALL_MALTEGO: ${INSTALL_MALTEGO:-false}
+    image: local/kali-offsec-lab:rolling
+    container_name: kali-lab
+    hostname: kali-lab
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${SSH_PORT:-50022}:22"
+      - "127.0.0.1:${RDP_PORT:-53389}:3389"
+      - "127.0.0.1:${WEB_PORT:-50080}:80"
+      - "127.0.0.1:${PROXY1_PORT:-58888}:8888"
+      - "127.0.0.1:${PROXY2_PORT:-58080}:8080"
+    secrets:
+      - authorized_keys
+      - kali_password
+      - postgres_password
+    volumes:
+      - ssh_host_keys:/etc/ssh/hostkeys
+      - ./workspace:/home/kali/workspace
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      LANG: ${LANG:-C.UTF-8}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-lab}
+      POSTGRES_USER: ${POSTGRES_USER:-lab}
+      KALI_PASSWORD_FILE: /run/secrets/kali_password
+    networks:
+      - labnet
+    security_opt:
+      - no-new-privileges:true
+    # Raw wireless monitoring/injection requires compatible host hardware and
+    # host networking/capabilities; deliberately not enabled by default.
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lab}
+      POSTGRES_USER: ${POSTGRES_USER:-lab}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - labnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+secrets:
+  authorized_keys:
+    file: ./secrets/authorized_keys
+  kali_password:
+    file: ./secrets/kali_password
+  postgres_password:
+    file: ./secrets/postgres_password
+
+volumes:
+  postgres_data:
+  ssh_host_keys:
+
+networks:
+  labnet:
+    driver: bridge

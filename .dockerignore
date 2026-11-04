@@ -1,0 +1,9 @@
+# Secrets and local state must never enter the image build context.
+secrets/
+.env
+.env.*
+!.env.example
+workspace/
+.git/
+.gitignore
+*.zip

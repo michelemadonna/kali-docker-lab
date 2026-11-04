@@ -1,0 +1,13 @@
+# Runtime credentials and private material
+.env
+secrets/*
+!secrets/README.md
+!secrets/.gitkeep
+
+# Persistent/local data
+workspace/*
+!workspace/.gitkeep
+opt/*
+!opt/.gitkeep
+*.zip
+.DS_Store
