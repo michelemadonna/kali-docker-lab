@@ -1,0 +1,15 @@
+services:
+  kali:
+    network_mode: !reset null
+    ports:
+      - "50022:50022"
+      - "53389:53389"
+    networks:
+      - kali_external
+    environment:
+      KALI_NETWORK_MODE: bridge
+
+networks:
+  kali_external:
+    name: ${KALI_DOCKER_NETWORK:-kali-lab-bridge}
+    external: true
