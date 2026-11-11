@@ -32,7 +32,7 @@ A Docker lab based on the official `kalilinux/kali-rolling` image. The `kali.sh`
    ./kali.sh --name kali-lab --build --profile network,osint
    ```
 
-   Add `--full` for all six profiles. `--gui xfce` maps to `DESKTOP=xfce-kali`. Bridge mode requires an existing Docker network and publishes SSH and XRDP on host ports `50022` and `53389`. `--minimal` without a desktop builds a package-free container for `docker exec`; set `DESKTOP` in `.env` or add `--gui` during the build to install only desktop support.
+   Add `--full` for all six profiles. `--gui xfce` maps to `DESKTOP=xfce-kali`. Bridge mode creates the selected Docker bridge network if it does not exist and publishes SSH and XRDP on host ports `50022` and `53389`. `--minimal` without a desktop builds a package-free container for `docker exec`; set `DESKTOP` in `.env` or add `--gui` during the build to install only desktop support.
 4. Check status and logs:
 
    ```sh
@@ -62,7 +62,7 @@ Profiles can be set in `.env` as `PROFILES=network,osint`, or passed with `--pro
 
 `--build` builds `local/kali-offsec-lab:rolling` with the selected tools and GUI. For a new container without `--build`, the image must already exist and its profile and desktop labels must match the requested selection. If the named container already exists and `--build` is omitted, `kali.sh` reuses it: only `--name` is required, and it starts the container if stopped. Any profile selection provided in CLI or `.env` must match that container's image. Existing containers keep their GUI, timezone, locale, and other creation-time settings.
 
-For a new container, `.env` values for `TZ`, `LANG`, and `KALI_DOCKER_NETWORK` are passed at creation. `--network bridge` uses the existing network named by `KALI_DOCKER_NETWORK` (default `kali-lab-bridge`); `--network bridge=NAME` selects a specific existing network. `--network host` selects host networking. When reusing a container, omitting `--network` preserves its current network. An explicit bridge request switches a single existing network by connecting the requested network before disconnecting the old one; containers attached to multiple networks require manual adjustment. Switching between host and bridge modes requires removing and recreating the container. `./kali.sh --help` lists all options.
+For a new container, `.env` values for `TZ`, `LANG`, and `KALI_DOCKER_NETWORK` are passed at creation. `--network bridge` uses the network named by `KALI_DOCKER_NETWORK` (default `kali-lab-bridge`); `--network bridge=NAME` selects a specific network. If the selected network does not exist, `kali.sh` creates it as a Docker bridge network. If a network with that name exists but uses another driver, the launcher stops with an error. `--network host` selects host networking. When reusing a container, omitting `--network` preserves its current network. An explicit bridge request switches a single existing network by connecting the requested network before disconnecting the old one; containers attached to multiple networks require manual adjustment. Switching between host and bridge modes requires removing and recreating the container. `./kali.sh --help` lists all options.
 
 `--build` refuses to overwrite a container with the requested name. To recreate it, remove it explicitly, then rerun `kali.sh`; include `--build` if the profiles or GUI changed. Docker cannot change privilege mode on an existing container, so recreate it to apply or remove `--no-privileged`. That option is only available with bridge networking; host mode always uses `--privileged`:
 
@@ -130,17 +130,12 @@ If the client reports a changed SSH host key after you intentionally remove that
 ## Networking notes
 
 - Kali uses `--network host` by default; port mappings are not used in that mode. SSH listens on `0.0.0.0:50022`; XRDP listens on `0.0.0.0:53389` when a desktop is selected.
-- Bridge mode uses an existing Docker network and publishes SSH and XRDP on all host interfaces at `50022` and `53389`. Set `KALI_DOCKER_NETWORK` in `.env` or pass `--network bridge=NAME`.
+- Bridge mode creates the selected Docker bridge network if needed and publishes SSH and XRDP on all host interfaces at `50022` and `53389`. Set `KALI_DOCKER_NETWORK` in `.env` or pass `--network bridge=NAME`.
 - The Kali MCP API binds to host loopback port `5000`. PostgreSQL uses a Unix socket and has no TCP listener.
 - OrbStack supports host networking. Docker Desktop requires host networking to be enabled in Settings (Docker Desktop 4.34 or later; see [Docker host networking](https://docs.docker.com/engine/network/drivers/host/)). Native Linux Docker supports it directly.
 - Host networking does not pass physical Wi-Fi devices into Docker Desktop or OrbStack; monitor mode and injection still require suitable host hardware and deliberate device access.
 
-Create a bridge network before using it:
-
-```sh
-docker network create lab-net
-./kali.sh --name kali-lab --network bridge=lab-net --build
-```
+For example, `./kali.sh --name kali-lab --network bridge=lab-net --build` creates `lab-net` automatically if needed.
 
 ## Useful commands
 

@@ -18,7 +18,7 @@ Options:
   --no-privileged            Use selected capabilities (bridge mode only)
   --network host             Use host networking (default for new containers)
   --network bridge            Use KALI_DOCKER_NETWORK from .env or its default
-  --network bridge=NAME       Use the specified existing Docker network
+  --network bridge=NAME       Use the specified Docker bridge network
   -h, --help                 Show this help
 
 --minimal, --full, --profile, and --gui require --build. When creating an
@@ -225,6 +225,23 @@ if [[ "$network_mode" == bridge && -z "$network_name" && "$network_requested" ==
   network_name=$(dotenv_value KALI_DOCKER_NETWORK kali-lab-bridge)
 fi
 
+ensure_bridge_network() {
+  local driver
+  if driver=$(docker network inspect --format '{{.Driver}}' "$network_name" 2>/dev/null); then
+    [[ "$driver" == bridge ]] \
+      || fail "Docker network '$network_name' uses driver '$driver'; a bridge network is required"
+    return
+  fi
+
+  if ! docker network create "$network_name" >/dev/null; then
+    # Another launcher may have created the network between inspect and create.
+    driver=$(docker network inspect --format '{{.Driver}}' "$network_name" 2>/dev/null) \
+      || fail "could not create Docker bridge network '$network_name'"
+    [[ "$driver" == bridge ]] \
+      || fail "Docker network '$network_name' uses driver '$driver'; a bridge network is required"
+  fi
+}
+
 image=local/kali-offsec-lab:rolling
 container_status=$(docker container inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null) \
   && container_exists=true || container_exists=false
@@ -320,6 +337,7 @@ if [[ "$container_exists" == true ]]; then
       [[ "$network_mode" == host && "$current_network_mode" == host ]] \
         || fail "container '$container_name' cannot switch between host and bridge networking; remove it explicitly and rerun kali.sh"
     elif [[ "$current_network_mode" != "$network_name" ]]; then
+      ensure_bridge_network
       attached_network_count=$(docker container inspect --format '{{len .NetworkSettings.Networks}}' "$container_name")
       [[ "$attached_network_count" == 1 ]] \
         || fail "container '$container_name' has multiple attached networks; disconnect them manually before changing its bridge network"
@@ -331,6 +349,8 @@ if [[ "$container_exists" == true ]]; then
         fi
         fail "could not disconnect '$container_name' from '$current_network_mode' and could not revert '$network_name'; inspect its network attachments manually"
       fi
+    else
+      ensure_bridge_network
     fi
   fi
 
@@ -392,6 +412,7 @@ if [[ "$network_mode" == host ]]; then
   run_args+=(--network host)
 else
   [[ -n "$network_name" ]] || fail 'the bridge network name is empty'
+  ensure_bridge_network
   run_args+=(
     --network "$network_name"
     --publish 50022:50022
