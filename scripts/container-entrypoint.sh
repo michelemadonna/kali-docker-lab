@@ -3,6 +3,49 @@ set -Eeuo pipefail
 
 fail() { echo "container-entrypoint: $*" >&2; exit 1; }
 
+# A --minimal image omits the common base and tool packages. Without a desktop,
+# keep it available for docker exec; with a desktop, run only XRDP under its own
+# Supervisor configuration, with no SSH or MCP services.
+if [[ -f /etc/kali-minimal ]]; then
+  if [[ ! -f /etc/kali-minimal-gui ]]; then
+    if (($# == 0)) || [[ "$1" == /usr/bin/supervisord ]]; then
+      exec sleep infinity
+    fi
+    exec "$@"
+  fi
+
+  if (($# > 0)) && [[ "$1" != /usr/bin/supervisord ]]; then
+    exec "$@"
+  fi
+
+  desktop="${DESKTOP:-openbox}"
+  case "$desktop" in
+    openbox|xfce-kali) ;;
+    *) fail "minimal GUI image requires DESKTOP=openbox or xfce-kali: $desktop" ;;
+  esac
+  network_mode="${KALI_NETWORK_MODE:-host}"
+  case "$network_mode" in
+    host|bridge) ;;
+    *) fail "KALI_NETWORK_MODE must be host or bridge: $network_mode" ;;
+  esac
+
+  [[ -r "${KALI_PASSWORD_FILE:-}" ]] || fail "KALI_PASSWORD_FILE secret is missing or unreadable"
+  kali_password="$(cat "$KALI_PASSWORD_FILE")"
+  [[ -n "$kali_password" ]] || fail "Kali desktop password secret is empty"
+  printf 'kali:%s\n' "$kali_password" | chpasswd
+  unset kali_password
+
+  if [[ "$desktop" == xfce-kali ]]; then
+    printf '%s\n' 'startxfce4' > /home/kali/.xsession
+  else
+    printf '%s\n' 'exec openbox-session' > /home/kali/.xsession
+  fi
+  chown kali:kali /home/kali/.xsession
+  chmod 0600 /home/kali/.xsession
+  sed -i '0,/^port=3389$/s//port=tcp:\/\/0.0.0.0:53389/' /etc/xrdp/xrdp.ini
+  exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord-minimal-gui.conf
+fi
+
 configure_locale_and_timezone() {
   local timezone="${TZ:-Etc/UTC}"
   local locale_name="${LANG:-C.UTF-8}"
@@ -37,13 +80,13 @@ configure_locale_and_timezone() {
 
 configure_locale_and_timezone
 
-mode="${MODE:-full}"
 desktop="${DESKTOP:-openbox}"
 network_mode="${KALI_NETWORK_MODE:-host}"
-case "$mode" in
-  minimal|full) ;;
-  *) fail "MODE must be minimal or full: $mode" ;;
-esac
+[[ -r /etc/kali-profiles ]] || fail 'image profile marker is missing; rebuild the image with kali.sh --build'
+profiles="$(cat /etc/kali-profiles)"
+profile_selected() {
+  case ",$profiles," in *",$1,"*) return 0 ;; *) return 1 ;; esac
+}
 case "$desktop" in
   no|openbox|xfce-kali) ;;
   *) fail "DESKTOP must be no, openbox, or xfce-kali: $desktop" ;;
@@ -55,7 +98,7 @@ esac
 
 [[ -r /run/secrets/authorized_keys ]] || fail "authorized_keys secret is missing or unreadable"
 
-if [[ "$mode" == full ]]; then
+if profile_selected exploitation; then
   [[ -r /run/secrets/postgres_password ]] || fail "PostgreSQL password secret is missing or unreadable"
   /usr/local/sbin/postgresql-prepare
 fi
@@ -98,7 +141,7 @@ elif [[ "$desktop" == openbox ]]; then
   chmod 0600 /home/kali/.xsession
 fi
 
-if [[ "$mode" != full ]]; then
+if ! profile_selected exploitation; then
   rm -f /etc/supervisor/conf.d/postgresql.conf
 fi
 
